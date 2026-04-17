@@ -30,6 +30,7 @@ async def notebook_ws(websocket: WebSocket, notebook_id: str):
       {"type": "kernel_status", "kernel_id": "...", "status": "..."}
     """
     await websocket.accept()
+    print(f"  🔌 WebSocket connected: notebook={notebook_id} client={websocket.client}")
 
     if notebook_id not in _connections:
         _connections[notebook_id] = []
@@ -40,6 +41,7 @@ async def notebook_ws(websocket: WebSocket, notebook_id: str):
             raw = await websocket.receive_text()
             msg = json.loads(raw)
             msg_type = msg.get("type")
+            print(f"  📨 WS message: type={msg_type} notebook={notebook_id}")
 
             if msg_type == "execute":
                 await _handle_execute(websocket, notebook_id, msg)

@@ -7,7 +7,6 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
-from starlette.middleware.base import BaseHTTPMiddleware
 from backend.core.config import settings
 from backend.api.notebooks import router as notebooks_router
 from backend.api.kernels import router as kernels_router
@@ -19,28 +18,39 @@ from backend.api.auth import router as auth_router
 FRONTEND_BUILD = Path(__file__).resolve().parent.parent / "frontend" / "dist"
 
 
-# ──── LAN Access Control Middleware ────
-class LANAccessMiddleware(BaseHTTPMiddleware):
+# ──── LAN Access Control Middleware (pure ASGI – works with WebSockets) ────
+class LANAccessMiddleware:
     """
     Restricts access to clients on the college LAN subnet only.
-    Subnet: 10.10.12.0/23 (255.255.254.0) — covers 10.10.12.1 - 10.10.13.254
+    Uses raw ASGI interface so WebSocket connections pass through correctly.
     """
 
-    async def dispatch(self, request: Request, call_next):
-        client_ip = request.client.host if request.client else "unknown"
+    def __init__(self, app):
+        self.app = app
 
-        if not settings.is_ip_allowed(client_ip):
-            return JSONResponse(
-                status_code=403,
-                content={
-                    "detail": f"Access denied. Your IP ({client_ip}) is not on the college LAN. "
-                              f"Connect to the college WiFi network to access MBM Book.",
-                    "allowed_subnet": settings.allowed_subnet,
-                },
-            )
+    async def __call__(self, scope, receive, send):
+        if scope["type"] in ("http", "websocket"):
+            client = scope.get("client")
+            client_ip = client[0] if client else "unknown"
 
-        response = await call_next(request)
-        return response
+            if not settings.is_ip_allowed(client_ip):
+                if scope["type"] == "websocket":
+                    # Reject WebSocket with policy violation code
+                    await send({"type": "websocket.close", "code": 1008})
+                    return
+                # Reject HTTP
+                response = JSONResponse(
+                    status_code=403,
+                    content={
+                        "detail": f"Access denied. Your IP ({client_ip}) is not on the college LAN. "
+                                  f"Connect to the college WiFi network to access MBM Book.",
+                        "allowed_subnet": settings.allowed_subnet,
+                    },
+                )
+                await response(scope, receive, send)
+                return
+
+        await self.app(scope, receive, send)
 
 
 @asynccontextmanager

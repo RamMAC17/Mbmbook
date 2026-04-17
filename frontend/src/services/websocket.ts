@@ -9,8 +9,20 @@ class WebSocketService {
   private handlers: Map<string, Set<MessageHandler>> = new Map()
   private reconnectTimer: number | null = null
   private notebookId: string | null = null
+  private pendingMessages: string[] = []
 
   connect(notebookId: string) {
+    // Clean up any existing connection first
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer)
+      this.reconnectTimer = null
+    }
+    if (this.ws) {
+      this.ws.onclose = null // prevent reconnect loop
+      this.ws.close()
+      this.ws = null
+    }
+
     this.notebookId = notebookId
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     const url = `${protocol}//${window.location.host}/ws/notebook/${notebookId}`
@@ -20,6 +32,11 @@ class WebSocketService {
     this.ws.onopen = () => {
       console.log('[WS] Connected to notebook:', notebookId)
       this.emit('connected', { notebookId })
+      // Flush any messages that were queued while connecting
+      while (this.pendingMessages.length > 0) {
+        const queued = this.pendingMessages.shift()!
+        this.ws!.send(queued)
+      }
     }
 
     this.ws.onmessage = (event) => {
@@ -58,10 +75,18 @@ class WebSocketService {
   }
 
   send(msg: any) {
+    const data = JSON.stringify(msg)
     if (this.ws?.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify(msg))
+      this.ws.send(data)
+    } else if (this.ws?.readyState === WebSocket.CONNECTING) {
+      // Queue the message to be sent when connected
+      this.pendingMessages.push(data)
     } else {
-      console.warn('[WS] Not connected. Message queued.')
+      console.warn('[WS] Not connected. Attempting reconnect...')
+      this.pendingMessages.push(data)
+      if (this.notebookId && !this.reconnectTimer) {
+        this.connect(this.notebookId)
+      }
     }
   }
 
