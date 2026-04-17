@@ -6,11 +6,9 @@ __pycache__/
 venv/
 *.egg-info/
 
-# Build
-dist/
+# Build (keep frontend/dist/ for production serving)
 build/
 .next/
-frontend/dist/
 
 # Environment
 .env

@@ -9,6 +9,7 @@ import asyncio
 import os
 import sys
 import shutil
+import time
 import uuid
 import tempfile
 from datetime import datetime, timezone
@@ -67,25 +68,29 @@ class KernelManager:
     def __init__(self):
         self._kernels: dict[str, KernelInstance] = {}
         self._language_kernels: dict[str, list[str]] = {}
-        self._docker_ok: bool | None = None  # lazy-checked
+        self._docker_ok: bool | None = None
+        self._docker_checked_at: float = 0  # timestamp of last check
 
     @property
     def docker_available(self) -> bool:
-        if self._docker_ok is None:
+        # Re-check every 60s so Docker Desktop start/stop is detected
+        now = time.monotonic()
+        if self._docker_ok is None or (now - self._docker_checked_at) > 60:
             self._docker_ok = _docker_available()
+            self._docker_checked_at = now
         return self._docker_ok
 
     async def _docker_image_exists(self, image: str) -> bool:
         """Check if a Docker image is pulled locally (with timeout)."""
+        import subprocess as _sp
         try:
-            proc = await asyncio.create_subprocess_exec(
-                "docker", "image", "inspect", image,
-                stdout=asyncio.subprocess.DEVNULL,
-                stderr=asyncio.subprocess.DEVNULL,
+            result = await asyncio.to_thread(
+                _sp.run,
+                ["docker", "image", "inspect", image],
+                stdout=_sp.DEVNULL, stderr=_sp.DEVNULL, timeout=10,
             )
-            await asyncio.wait_for(proc.wait(), timeout=10)
-            return proc.returncode == 0
-        except (asyncio.TimeoutError, Exception):
+            return result.returncode == 0
+        except Exception:
             return False
 
     # ──── Kernel Lifecycle ────
@@ -155,7 +160,9 @@ class KernelManager:
     async def _execute_docker(
         self, kernel: KernelInstance, spec: dict, code: str
     ) -> AsyncGenerator[dict, None]:
-        """Execute code inside an isolated Docker container."""
+        """Execute code inside an isolated Docker container.
+        Uses subprocess.run in a thread for Windows compatibility."""
+        import subprocess as _sp
         from backend.core.config import settings
 
         file_ext = spec.get("file_extension", ".txt")
@@ -177,6 +184,13 @@ class KernelManager:
                 "--memory", str(settings.default_memory_limit),
                 "--cpus", str(settings.default_cpu_limit),
                 "--pids-limit", "256",
+            ]
+
+            # Pass through GPU if available (for ML/CUDA workloads)
+            if self._has_nvidia_docker():
+                base_args += ["--gpus", "all"]
+
+            base_args += [
                 "-v", f"{data_dir}:/workspace:rw",
                 "-w", "/workspace",
                 docker_image,
@@ -212,36 +226,29 @@ class KernelManager:
             else:
                 cmd = base_args + [spec.get("binary", "echo"), f"/workspace/{temp_name}"]
 
-            proc = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-
             try:
-                stdout_lines, stderr_lines = await asyncio.wait_for(
-                    asyncio.gather(
-                        self._collect_stream(proc.stdout, "stdout"),
-                        self._collect_stream(proc.stderr, "stderr"),
-                    ),
-                    timeout=settings.kernel_timeout,
+                result = await asyncio.to_thread(
+                    _sp.run, cmd, capture_output=True, timeout=settings.kernel_timeout,
                 )
-                await asyncio.wait_for(proc.wait(), timeout=10)
-            except asyncio.TimeoutError:
-                proc.kill()
+            except _sp.TimeoutExpired:
                 yield {"type": "error", "ename": "TimeoutError", "evalue": "Execution timed out", "traceback": []}
                 return
 
-            for line in stdout_lines:
-                yield {"type": "stream", "name": "stdout", "text": line}
-            for line in stderr_lines:
-                yield {"type": "stream", "name": "stderr", "text": line}
+            stdout_text = result.stdout.decode("utf-8", errors="replace")
+            stderr_text = result.stderr.decode("utf-8", errors="replace")
 
-            if proc.returncode != 0 and not stderr_lines:
+            if stdout_text:
+                for line in stdout_text.splitlines(keepends=True):
+                    yield {"type": "stream", "name": "stdout", "text": line}
+            if stderr_text:
+                for line in stderr_text.splitlines(keepends=True):
+                    yield {"type": "stream", "name": "stderr", "text": line}
+
+            if result.returncode != 0 and not stderr_text and not stdout_text:
                 yield {
                     "type": "error",
                     "ename": "RuntimeError",
-                    "evalue": f"Container exited with code {proc.returncode}",
+                    "evalue": f"Container exited with code {result.returncode}",
                     "traceback": [],
                 }
         finally:
@@ -259,12 +266,16 @@ class KernelManager:
     async def _execute_subprocess(
         self, kernel: KernelInstance, spec: dict, code: str
     ) -> AsyncGenerator[dict, None]:
-        """Execute code via local subprocess (no Docker needed)."""
+        """Execute code via local subprocess (no Docker needed).
+        Uses subprocess.run in a thread for Windows compatibility."""
+        import subprocess as _sp
+
         file_ext = spec.get("file_extension", ".txt")
         compile_cmd = spec.get("compile_cmd")
         run_cmd_template = spec.get("run_cmd")
 
         data_dir = os.path.abspath("data")
+        os.makedirs(data_dir, exist_ok=True)
         with tempfile.NamedTemporaryFile(
             mode="w", suffix=file_ext, delete=False, dir=data_dir
         ) as f:
@@ -278,17 +289,24 @@ class KernelManager:
                     for c in compile_cmd
                 ]
                 cmd = self._resolve_cmd(cmd)
-                proc = await asyncio.create_subprocess_exec(
-                    *cmd,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                )
-                _, stderr = await proc.communicate()
-                if proc.returncode != 0:
+                try:
+                    result = await asyncio.to_thread(
+                        _sp.run, cmd, capture_output=True, timeout=60,
+                    )
+                except FileNotFoundError:
+                    binary = cmd[0] if cmd else "unknown"
+                    yield {
+                        "type": "error",
+                        "ename": "CompilerNotFound",
+                        "evalue": f"'{binary}' is not installed on the server. Ask the admin to install it.",
+                        "traceback": [],
+                    }
+                    return
+                if result.returncode != 0:
                     yield {
                         "type": "error",
                         "ename": "CompilationError",
-                        "evalue": stderr.decode("utf-8", errors="replace"),
+                        "evalue": result.stderr.decode("utf-8", errors="replace"),
                         "traceback": [],
                     }
                     return
@@ -303,29 +321,38 @@ class KernelManager:
                 binary = self._resolve_binary(spec.get("binary", "echo"))
                 cmd = [binary, temp_path]
 
-            proc = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
+            result = await asyncio.to_thread(
+                _sp.run, cmd, capture_output=True, timeout=120,
             )
-            stdout_lines, stderr_lines = await asyncio.gather(
-                self._collect_stream(proc.stdout, "stdout"),
-                self._collect_stream(proc.stderr, "stderr"),
-            )
-            await proc.wait()
 
-            for line in stdout_lines:
-                yield {"type": "stream", "name": "stdout", "text": line}
-            for line in stderr_lines:
-                yield {"type": "stream", "name": "stderr", "text": line}
+            stdout_text = result.stdout.decode("utf-8", errors="replace")
+            stderr_text = result.stderr.decode("utf-8", errors="replace")
 
-            if proc.returncode != 0 and not stderr_lines:
+            if stdout_text:
+                for line in stdout_text.splitlines(keepends=True):
+                    yield {"type": "stream", "name": "stdout", "text": line}
+            if stderr_text:
+                for line in stderr_text.splitlines(keepends=True):
+                    yield {"type": "stream", "name": "stderr", "text": line}
+
+            # Only report exit code error if there was no output at all
+            if result.returncode != 0 and not stderr_text and not stdout_text:
                 yield {
                     "type": "error",
                     "ename": "RuntimeError",
-                    "evalue": f"Process exited with code {proc.returncode}",
+                    "evalue": f"Process exited with code {result.returncode}",
                     "traceback": [],
                 }
+        except FileNotFoundError as e:
+            binary = cmd[0] if cmd else "unknown"
+            yield {
+                "type": "error",
+                "ename": "CompilerNotFound",
+                "evalue": f"'{binary}' is not installed on the server. Ask the admin to install it.",
+                "traceback": [],
+            }
+        except _sp.TimeoutExpired:
+            yield {"type": "error", "ename": "TimeoutError", "evalue": "Execution timed out", "traceback": []}
         finally:
             try:
                 os.unlink(temp_path)
@@ -337,6 +364,20 @@ class KernelManager:
                 pass
 
     # ──── Helpers ────
+
+    def _has_nvidia_docker(self) -> bool:
+        """Check if NVIDIA Container Toolkit is available for GPU pass-through."""
+        if not hasattr(self, '_nvidia_docker_ok'):
+            import subprocess as _sp
+            try:
+                result = _sp.run(
+                    ["docker", "run", "--rm", "--gpus", "all", "hello-world"],
+                    capture_output=True, timeout=15,
+                )
+                self._nvidia_docker_ok = result.returncode == 0
+            except Exception:
+                self._nvidia_docker_ok = False
+        return self._nvidia_docker_ok
 
     def _resolve_binary(self, binary: str) -> str:
         """Resolve a binary name to a full path.

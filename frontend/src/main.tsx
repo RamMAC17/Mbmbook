@@ -1,3 +1,4 @@
+import './monaco-setup'   // Must be FIRST — bundles Monaco locally, no CDN
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'

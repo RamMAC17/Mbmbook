@@ -6,18 +6,23 @@ import { useThemeStore } from '../stores/themeStore'
 export function ClusterPanel() {
   const { clusterNodes } = useNotebookStore()
   const { clusterPosition, setClusterPosition } = useThemeStore()
+  const [istTime, setIstTime] = useState('')
+
+  useEffect(() => {
+    const tick = () => {
+      setIstTime(new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', hour12: true }))
+    }
+    tick()
+    const interval = setInterval(tick, 1000)
+    return () => clearInterval(interval)
+  }, [])
 
   const togglePosition = () => {
     setClusterPosition(clusterPosition === 'right' ? 'left' : 'right')
   }
 
-  const demoNodes: ClusterNode[] = clusterNodes.length > 0 ? clusterNodes : [
-    { id: '1', hostname: 'mbm-lab-01 (Head)', ipAddress: '10.10.13.242', status: 'online', cpuCores: 20, ramTotalGb: 32, gpuName: 'RTX 3060', gpuVramGb: 12, activeKernels: 2 },
-    { id: '2', hostname: 'mbm-lab-02', ipAddress: '10.10.13.100', status: 'online', cpuCores: 20, ramTotalGb: 32, gpuName: 'RTX 3060', gpuVramGb: 12, activeKernels: 1 },
-    { id: '3', hostname: 'mbm-lab-03', ipAddress: '10.10.13.101', status: 'offline', cpuCores: 20, ramTotalGb: 32, gpuName: 'RTX 3060', gpuVramGb: 12, activeKernels: 0 },
-  ]
-
-  const onlineNodes = demoNodes.filter(n => n.status === 'online')
+  const nodes = clusterNodes
+  const onlineNodes = nodes.filter(n => n.status === 'online')
   const totalCores = onlineNodes.reduce((sum, n) => sum + n.cpuCores, 0)
   const totalRam = onlineNodes.reduce((sum, n) => sum + n.ramTotalGb, 0)
   const totalGpu = onlineNodes.reduce((sum, n) => sum + n.gpuVramGb, 0)
@@ -35,9 +40,14 @@ export function ClusterPanel() {
         </button>
       </div>
 
+      <div className="px-3 py-2 border-b border-line text-center">
+        <span className="text-[11px] text-content-muted">IST: </span>
+        <span className="text-xs font-mono text-content-primary">{istTime}</span>
+      </div>
+
       <div className="px-3 py-3 border-b border-line">
         <div className="grid grid-cols-2 gap-2">
-          <StatCard label="Nodes" value={`${onlineNodes.length}/${demoNodes.length}`} color="accent" />
+          <StatCard label="Nodes" value={`${onlineNodes.length}/${nodes.length}`} color="accent" />
           <StatCard label="CPU Cores" value={`${totalCores}`} color="success" />
           <StatCard label="RAM" value={`${totalRam} GB`} color="purple" />
           <StatCard label="GPU VRAM" value={`${totalGpu} GB`} color="warning" />
@@ -47,7 +57,10 @@ export function ClusterPanel() {
       <div className="px-3 py-3">
         <h3 className="text-[11px] font-semibold text-content-muted uppercase mb-2 tracking-wide">Nodes</h3>
         <div className="space-y-2">
-          {demoNodes.map((node) => (
+          {nodes.length === 0 && (
+            <p className="text-[11px] text-content-muted text-center py-4">Loading server info...</p>
+          )}
+          {nodes.map((node) => (
             <NodeCard key={node.id} node={node} />
           ))}
         </div>

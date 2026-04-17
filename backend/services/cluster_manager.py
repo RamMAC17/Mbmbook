@@ -1,42 +1,75 @@
 """
-Cluster Manager - Manages distributed computing across lab PCs using Ray.
+Cluster Manager - Manages this PC as the notebook execution server.
 
-Handles:
-  - Node registration and discovery
-  - Task scheduling across nodes
-  - Resource-aware kernel placement
-  - Load balancing
-  - Health monitoring
+Shows real hardware info only (no fake nodes).
 """
 
 import uuid
+import subprocess
+import psutil
 from datetime import datetime, timezone
 
 
+def _get_gpu_info():
+    """Get GPU info via nvidia-smi (works on all Python versions)."""
+    try:
+        result = subprocess.run(
+            [
+                "nvidia-smi",
+                "--query-gpu=name,memory.total",
+                "--format=csv,noheader,nounits",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            parts = result.stdout.strip().split(",")
+            name = parts[0].strip()
+            vram_mb = float(parts[1].strip())
+            return name, round(vram_mb / 1024, 1)
+    except Exception:
+        pass
+    return None, 0.0
+
+
+def _get_real_hw():
+    """Get real hardware info from this PC."""
+    cpu_cores = psutil.cpu_count(logical=False) or psutil.cpu_count() or 1
+    ram_total_gb = round(psutil.virtual_memory().total / (1024 ** 3), 1)
+    disk_total_gb = round(psutil.disk_usage("/").total / (1024 ** 3), 1)
+
+    gpu_name, gpu_vram_gb = _get_gpu_info()
+
+    return cpu_cores, ram_total_gb, gpu_name, gpu_vram_gb, disk_total_gb
+
+
 class ClusterNode:
-    """Represents a node in the cluster."""
+    """Represents this server node."""
 
     def __init__(
         self,
         hostname: str,
         ip_address: str,
-        is_head: bool = False,
+        is_head: bool = True,
     ):
         self.id = str(uuid.uuid4())
         self.hostname = hostname
         self.ip_address = ip_address
-        self.port = 8786
+        self.port = 80
         self.is_head = is_head
         self.status = "online"
-        self.cpu_cores = 20
-        self.cpu_threads = 28
-        self.ram_total_gb = 32.0
-        self.gpu_name = "NVIDIA GeForce RTX 3060"
-        self.gpu_vram_gb = 12.0
-        self.disk_total_gb = 512.0
+
+        # Real hardware data
+        cores, ram, gpu, vram, disk = _get_real_hw()
+        self.cpu_cores = cores
+        self.ram_total_gb = ram
+        self.gpu_name = gpu or "None"
+        self.gpu_vram_gb = vram
+        self.disk_total_gb = disk
+
         self.active_kernels = 0
         self.last_heartbeat = datetime.now(timezone.utc)
-        self.metadata = {}
 
     def to_dict(self) -> dict:
         return {
@@ -46,7 +79,7 @@ class ClusterNode:
             "is_head": self.is_head,
             "status": self.status,
             "cpu_cores": self.cpu_cores,
-            "cpu_threads": self.cpu_threads,
+            "cpu_threads": psutil.cpu_count() or self.cpu_cores,
             "ram_total_gb": self.ram_total_gb,
             "gpu_name": self.gpu_name,
             "gpu_vram_gb": self.gpu_vram_gb,
@@ -57,41 +90,20 @@ class ClusterNode:
 
 
 class ClusterManager:
-    """Manages the distributed cluster of lab PCs."""
+    """Manages this single server node (real data only)."""
 
     def __init__(self):
         self._nodes: dict[str, ClusterNode] = {}
-        self._ray_initialized = False
-
-    async def initialize_ray(self, head_address: str = "auto"):
-        """Initialize Ray cluster connection."""
-        try:
-            import ray
-            if not ray.is_initialized():
-                if head_address == "auto":
-                    ray.init()
-                else:
-                    ray.init(address=head_address)
-                self._ray_initialized = True
-                print(f"✅ Connected to Ray cluster: {ray.cluster_resources()}")
-        except ImportError:
-            print("⚠️ Ray not installed. Running in standalone mode.")
-        except Exception as e:
-            print(f"⚠️ Could not connect to Ray: {e}. Running in standalone mode.")
 
     async def register_node(
-        self, hostname: str, ip_address: str, is_head: bool = False
+        self, hostname: str, ip_address: str, is_head: bool = True
     ) -> ClusterNode:
-        """Register a new node in the cluster."""
+        """Register this PC as the server node."""
         node = ClusterNode(hostname=hostname, ip_address=ip_address, is_head=is_head)
         self._nodes[node.id] = node
         return node
 
     async def list_nodes(self) -> list[dict]:
-        """List all cluster nodes."""
-        # If Ray is connected, sync with Ray's node list
-        if self._ray_initialized:
-            await self._sync_ray_nodes()
         return [n.to_dict() for n in self._nodes.values()]
 
     async def get_node(self, node_id: str) -> dict | None:
@@ -99,10 +111,8 @@ class ClusterManager:
         return node.to_dict() if node else None
 
     async def get_cluster_status(self) -> dict:
-        """Get aggregated cluster status."""
         nodes = list(self._nodes.values())
         online = [n for n in nodes if n.status == "online"]
-
         return {
             "total_nodes": len(nodes),
             "online_nodes": len(online),
@@ -114,46 +124,13 @@ class ClusterManager:
         }
 
     async def get_node_resources(self, node_id: str) -> dict | None:
-        """Get real-time resource usage from a specific node."""
         node = self._nodes.get(node_id)
         if not node:
             return None
-
-        # In production: query the node's resource monitor agent
-        # For now, return local metrics if this is the local node
         from backend.services.resource_monitor import resource_monitor
         return resource_monitor.get_usage()
 
-    async def select_best_node(
-        self,
-        requires_gpu: bool = False,
-        min_memory_gb: float = 4.0,
-    ) -> ClusterNode | None:
-        """
-        Select the best node for launching a new kernel.
-
-        Strategy: least-loaded node that meets requirements.
-        """
-        candidates = []
-        for node in self._nodes.values():
-            if node.status != "online":
-                continue
-            if requires_gpu and node.gpu_vram_gb < 1:
-                continue
-            # Check if node has enough capacity
-            if node.active_kernels >= 10:  # max kernels per node
-                continue
-            candidates.append(node)
-
-        if not candidates:
-            return None
-
-        # Sort by active kernels (ascending) - least loaded first
-        candidates.sort(key=lambda n: n.active_kernels)
-        return candidates[0]
-
     async def drain_node(self, node_id: str) -> bool:
-        """Stop scheduling new kernels on a node."""
         node = self._nodes.get(node_id)
         if not node:
             return False
@@ -161,40 +138,11 @@ class ClusterManager:
         return True
 
     async def resume_node(self, node_id: str) -> bool:
-        """Resume scheduling on a drained node."""
         node = self._nodes.get(node_id)
         if not node:
             return False
         node.status = "online"
         return True
-
-    async def heartbeat(self, node_id: str, resources: dict) -> bool:
-        """Update node heartbeat and resource usage."""
-        node = self._nodes.get(node_id)
-        if not node:
-            return False
-        node.last_heartbeat = datetime.now(timezone.utc)
-        node.metadata["last_resources"] = resources
-        return True
-
-    async def _sync_ray_nodes(self):
-        """Sync node list with Ray cluster."""
-        try:
-            import ray
-            nodes = ray.nodes()
-            for rn in nodes:
-                hostname = rn.get("NodeManagerHostname", "unknown")
-                ip = rn.get("NodeManagerAddress", "0.0.0.0")
-                # Check if already registered
-                existing = None
-                for node in self._nodes.values():
-                    if node.hostname == hostname:
-                        existing = node
-                        break
-                if not existing:
-                    await self.register_node(hostname, ip)
-        except Exception:
-            pass
 
 
 # Singleton

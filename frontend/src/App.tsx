@@ -7,6 +7,7 @@ import { ResizeHandle } from './components/ResizeHandle'
 import { useNotebookStore } from './stores/notebookStore'
 import { useThemeStore } from './stores/themeStore'
 import { wsService } from './services/websocket'
+import { api } from './services/api'
 
 function useIsMobile() {
   const [mobile, setMobile] = useState(window.innerWidth < 768)
@@ -19,10 +20,32 @@ function useIsMobile() {
 }
 
 export default function App() {
-  const { notebook, sidebarOpen, clusterPanelOpen, appendCellOutput, setCellExecuting, toggleSidebar, toggleClusterPanel } =
+  const { notebook, sidebarOpen, clusterPanelOpen, appendCellOutput, setCellExecuting, toggleSidebar, toggleClusterPanel, setClusterNodes } =
     useNotebookStore()
   const { sidebarWidth, clusterPanelWidth, sidebarPosition, clusterPosition, isResizing } = useThemeStore()
   const isMobile = useIsMobile()
+
+  // Fetch real cluster nodes from the API
+  useEffect(() => {
+    const fetchNodes = () => {
+      api.listNodes().then((nodes: any[]) => {
+        setClusterNodes(nodes.map((n: any) => ({
+          id: n.id,
+          hostname: n.hostname + (n.is_head ? ' (Head)' : ''),
+          ipAddress: n.ip_address,
+          status: n.status,
+          cpuCores: n.cpu_cores,
+          ramTotalGb: n.ram_total_gb,
+          gpuName: n.gpu_name || 'None',
+          gpuVramGb: n.gpu_vram_gb || 0,
+          activeKernels: n.active_kernels || 0,
+        })))
+      }).catch(() => {})
+    }
+    fetchNodes()
+    const interval = setInterval(fetchNodes, 10000)
+    return () => clearInterval(interval)
+  }, [setClusterNodes])
 
   useEffect(() => {
     wsService.connect(notebook.id)
