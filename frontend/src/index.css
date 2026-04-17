@@ -1,0 +1,311 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ─── Theme CSS Variables ─── */
+
+/* Dark mode (default) */
+.dark {
+  --surface-primary: #0B1121;
+  --surface-secondary: #111827;
+  --surface-tertiary: #1E293B;
+  --surface-accent: #1A1510;
+  --surface-editor: #1E1E2E;
+  --content-primary: #E3E7EA;
+  --content-secondary: #94A3B8;
+  --content-muted: #64748B;
+  --line: #1F2937;
+  --line-hover: #374151;
+  --accent: #818CF8;
+  --accent-hover: #A5B4FC;
+  --accent-muted: rgba(129,140,248,0.12);
+  --danger: #F87171;
+  --success: #34D399;
+  --warning: #FBBF24;
+  --breath-1: #0B1121;
+  --breath-2: #14100A;
+  --breath-3: #0B1525;
+  --scrollbar-track: #0B1121;
+  --scrollbar-thumb: #334155;
+  --scrollbar-hover: #475569;
+  color-scheme: dark;
+}
+
+/* Light mode */
+.light {
+  --surface-primary: #F5F7F9;
+  --surface-secondary: #ECEEF1;
+  --surface-tertiary: #FFFFFF;
+  --surface-accent: #F3EDE7;
+  --surface-editor: #FFFFFF;
+  --content-primary: #2A2A2A;
+  --content-secondary: #5A5A5A;
+  --content-muted: #8A8A8A;
+  --line: #D8DDE3;
+  --line-hover: #C5CBD2;
+  --accent: #6366F1;
+  --accent-hover: #4F46E5;
+  --accent-muted: rgba(99,102,241,0.08);
+  --danger: #DC2626;
+  --success: #16A34A;
+  --warning: #D97706;
+  --breath-1: #F5F7F9;
+  --breath-2: #F0E6DC;
+  --breath-3: #E8F0F8;
+  --scrollbar-track: #F0F0F0;
+  --scrollbar-thumb: #C5CBD2;
+  --scrollbar-hover: #A0A8B0;
+  color-scheme: light;
+}
+
+/* Mix mode */
+.mix {
+  --surface-primary: #1C1F2E;
+  --surface-secondary: #21253A;
+  --surface-tertiary: #2A2F45;
+  --surface-accent: #2A241C;
+  --surface-editor: #22253A;
+  --content-primary: #E3E7EA;
+  --content-secondary: #A0AAB8;
+  --content-muted: #6B7585;
+  --line: #2D3348;
+  --line-hover: #3D4560;
+  --accent: #A5B4FC;
+  --accent-hover: #C7D2FE;
+  --accent-muted: rgba(165,180,252,0.10);
+  --danger: #F87171;
+  --success: #34D399;
+  --warning: #FBBF24;
+  --breath-1: #1C1F2E;
+  --breath-2: #241E15;
+  --breath-3: #1C2535;
+  --scrollbar-track: #1C1F2E;
+  --scrollbar-thumb: #3D4560;
+  --scrollbar-hover: #505878;
+  color-scheme: dark;
+}
+
+/* ─── Base ─── */
+
+:root { font-family: 'Inter', system-ui, -apple-system, sans-serif; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--surface-primary);
+  color: var(--content-primary);
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+/* ─── Scrollbar ─── */
+
+::-webkit-scrollbar { width: 7px; height: 7px; }
+::-webkit-scrollbar-track { background: var(--scrollbar-track); }
+::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-hover); }
+* { scrollbar-width: thin; scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track); }
+
+/* ─── Breathing Background ─── */
+
+.breathing-bg {
+  background: linear-gradient(135deg, var(--breath-1) 0%, var(--breath-2) 50%, var(--breath-3) 100%);
+  background-size: 400% 400%;
+  animation: bgBreathe 20s ease-in-out infinite;
+}
+
+@keyframes bgBreathe {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+
+/* ─── Title Animation ─── */
+
+.title-text {
+  animation: titleFadeIn 1.2s ease-out forwards;
+  opacity: 0;
+  letter-spacing: 0.04em;
+}
+
+/* Title glow effect - cool lighting */
+.title-glow {
+  animation: titleFadeIn 1.2s ease-out forwards, titleGlow 3s ease-in-out 1.2s infinite;
+  text-shadow:
+    0 0 7px var(--accent),
+    0 0 14px color-mix(in srgb, var(--accent) 40%, transparent),
+    0 0 28px color-mix(in srgb, var(--accent) 15%, transparent);
+}
+
+@keyframes titleFadeIn {
+  0% { opacity: 0; transform: translateY(6px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes titleGlow {
+  0%, 100% {
+    text-shadow:
+      0 0 7px var(--accent),
+      0 0 14px color-mix(in srgb, var(--accent) 40%, transparent);
+    filter: brightness(1);
+  }
+  50% {
+    text-shadow:
+      0 0 10px var(--accent),
+      0 0 20px color-mix(in srgb, var(--accent) 60%, transparent),
+      0 0 40px color-mix(in srgb, var(--accent) 25%, transparent);
+    filter: brightness(1.15);
+  }
+}
+
+.mbm-logo {
+  animation: logoFadeIn 0.8s ease-out forwards;
+  opacity: 0;
+}
+
+@keyframes logoFadeIn {
+  0% { opacity: 0; transform: scale(0.85); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+/* ─── Code Output ─── */
+
+.cell-output pre {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.cell-output .error { color: var(--danger); }
+.cell-output .stream-stderr { color: var(--warning); }
+
+/* ─── Monaco ─── */
+.monaco-editor { border-radius: 6px; }
+
+/* ─── Markdown Cell ─── */
+
+.markdown-cell h1 { font-size: 2em; font-weight: 700; margin: 0.5em 0; color: var(--content-primary); }
+.markdown-cell h2 { font-size: 1.5em; font-weight: 600; margin: 0.5em 0; color: var(--content-primary); }
+.markdown-cell h3 { font-size: 1.25em; font-weight: 600; margin: 0.5em 0; color: var(--content-primary); }
+.markdown-cell p { margin: 0.5em 0; line-height: 1.7; color: var(--content-secondary); }
+.markdown-cell code {
+  background: var(--surface-tertiary);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.9em;
+  color: var(--accent);
+}
+.markdown-cell pre code { display: block; padding: 12px; overflow-x: auto; color: var(--content-primary); }
+.markdown-cell ul, .markdown-cell ol { padding-left: 1.5em; margin: 0.5em 0; }
+.markdown-cell li { margin: 0.25em 0; color: var(--content-secondary); }
+.markdown-cell blockquote {
+  border-left: 3px solid var(--accent);
+  padding-left: 1em;
+  color: var(--content-muted);
+  margin: 0.5em 0;
+}
+.markdown-cell table { border-collapse: collapse; margin: 0.5em 0; }
+.markdown-cell th, .markdown-cell td { border: 1px solid var(--line); padding: 6px 12px; }
+.markdown-cell th { background: var(--surface-tertiary); }
+
+/* ─── Cell Execution Animation ─── */
+
+@keyframes pulse-border {
+  0%, 100% { border-color: var(--accent); }
+  50% { border-color: var(--accent-hover); }
+}
+.cell-executing { animation: pulse-border 1.5s ease-in-out infinite; }
+
+/* ─── Resize Handle ─── */
+
+.resize-handle { touch-action: none; }
+.resize-handle::after {
+  content: '';
+  position: absolute;
+  top: 0; bottom: 0;
+  width: 1px;
+  background: var(--line);
+  left: 50%;
+  transform: translateX(-50%);
+  transition: background 0.15s, width 0.15s;
+}
+.resize-handle:hover::after,
+.resize-handle:active::after {
+  background: var(--accent);
+  width: 2px;
+}
+
+/* ─── Panel Animations ─── */
+
+.panel-slide-left { animation: panelSlideLeft 0.18s ease-out; }
+.panel-slide-right { animation: panelSlideRight 0.18s ease-out; }
+
+@keyframes panelSlideLeft {
+  from { opacity: 0; transform: translateX(-10px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes panelSlideRight {
+  from { opacity: 0; transform: translateX(10px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+/* ─── Mobile Overlay / Drawer ─── */
+
+.mobile-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.45);
+  z-index: 40;
+  animation: fadeIn 0.15s ease;
+}
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+.mobile-drawer {
+  position: fixed; top: 0; bottom: 0;
+  z-index: 50;
+  background: var(--surface-secondary);
+  border-right: 1px solid var(--line);
+  overflow-y: auto;
+}
+.mobile-drawer.from-left { left: 0; animation: mDrawerL 0.2s ease-out; }
+.mobile-drawer.from-right { right: 0; border-right: none; border-left: 1px solid var(--line); animation: mDrawerR 0.2s ease-out; }
+
+@keyframes mDrawerL { from { transform: translateX(-100%); } to { transform: translateX(0); } }
+@keyframes mDrawerR { from { transform: translateX(100%); } to { transform: translateX(0); } }
+
+/* ─── Responsive Utilities ─── */
+
+@media (max-width: 640px) {
+  .cell-output pre { font-size: 11px; }
+  .monaco-editor { font-size: 12px !important; }
+}
+
+/* ─── Light Mode Fixes ─── */
+
+.light select option {
+  background: var(--surface-tertiary);
+  color: var(--content-primary);
+}
+
+.light .cell-output pre {
+  color: var(--content-primary);
+}
+
+.light .cell-output .text-content-secondary {
+  color: var(--content-primary);
+}
+
+/* Ensure buttons in light mode are visible */
+.light button:hover {
+  opacity: 0.9;
+}
+
+/* Fix cell background opacity in light mode for readability */
+.light .bg-surface-secondary\/60 {
+  background: var(--surface-secondary);
+}
+
+.light .bg-surface-secondary\/30 {
+  background: color-mix(in srgb, var(--surface-secondary) 70%, transparent);
+}

@@ -1,0 +1,77 @@
+services:
+  # ──── Infrastructure ────
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: mbmbook
+      POSTGRES_PASSWORD: mbmbook
+      POSTGRES_DB: mbmbook
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mbmbook"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ──── MBM Book Backend ────
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    ports:
+      - "8000:8000"
+    environment:
+      MBM_DATABASE_URL: postgresql+asyncpg://mbmbook:mbmbook@postgres:5432/mbmbook
+      MBM_REDIS_URL: redis://redis:6379/0
+      MBM_DEBUG: "true"
+      MBM_RAY_HEAD_ADDRESS: "auto"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./data:/app/data
+      - /var/run/docker.sock:/var/run/docker.sock  # Docker-in-Docker for kernel containers
+    networks:
+      - mbmbook-net
+      - default
+
+  # ──── MBM Book Frontend ────
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+    environment:
+      VITE_API_URL: http://api:8000
+
+volumes:
+  pgdata:
+  redisdata:
+
+networks:
+  mbmbook-net:
+    driver: bridge
+    name: mbmbook-net

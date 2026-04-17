@@ -1,0 +1,37 @@
+# Dependencies
+node_modules/
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+
+# Build
+dist/
+build/
+.next/
+frontend/dist/
+
+# Environment
+.env
+.env.local
+
+# IDE
+.vscode/settings.json
+.idea/
+
+# Data (runtime)
+data/*.db
+data/*.db-journal
+data/notebooks/*
+data/uploads/*
+!data/notebooks/.gitkeep
+!data/uploads/.gitkeep
+
+# Docker
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
