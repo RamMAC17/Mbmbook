@@ -234,4 +234,4 @@ All settings use the `MBM_` prefix and can be set in `.env`:
 
 ## License
 
-MIT
+MBM
