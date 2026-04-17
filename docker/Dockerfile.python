@@ -1,14 +1,34 @@
-FROM python:3.12-slim
+FROM python:3.11-slim
 
-# System deps for opencv and image processing
+ENV PYTHONUNBUFFERED=1
+ENV DEBIAN_FRONTEND=noninteractive
+
+# System deps for scientific/ML/image libraries
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc g++ libffi-dev libglib2.0-0 libsm6 libxext6 libxrender1 libgl1 \
+    gcc g++ gfortran make cmake \
+    libffi-dev libglib2.0-0 libsm6 libxext6 libxrender1 libgl1 \
+    libhdf5-dev liblapack-dev libblas-dev \
+    libxml2-dev libxslt1-dev \
+    git curl wget unzip ffmpeg libsndfile1 \
     && rm -rf /var/lib/apt/lists/*
 
-# Pre-install common ML / image-processing / data-science packages
+# Core scientific + ML + image + NLP (same as kernel image)
 RUN pip install --no-cache-dir \
-    numpy pandas matplotlib seaborn scikit-learn scipy \
-    opencv-python-headless pillow \
-    sympy requests
+    numpy pandas matplotlib seaborn plotly \
+    scipy sympy statsmodels ipython \
+    scikit-learn scikit-image xgboost lightgbm catboost imbalanced-learn \
+    tensorflow \
+    opencv-python-headless pillow imageio \
+    nltk spacy transformers datasets tokenizers sentencepiece gensim \
+    keras h5py onnx onnxruntime \
+    openpyxl xlsxwriter xlrd bokeh altair networkx \
+    tabulate prettytable tqdm rich \
+    requests httpx aiohttp beautifulsoup4 lxml flask scrapy \
+    sqlalchemy pyyaml toml pydantic python-dotenv \
+    Cython numba joblib dill cloudpickle regex faker
+
+RUN pip install --no-cache-dir \
+    torch torchvision torchaudio \
+    --index-url https://download.pytorch.org/whl/cpu
 
 WORKDIR /workspace

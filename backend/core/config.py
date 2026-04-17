@@ -15,15 +15,15 @@ class Settings(BaseSettings):
 
     # Server
     host: str = "0.0.0.0"
-    port: int = 8000
+    port: int = 9999
     workers: int = 4
 
     # Network Access Control
     # Supports multiple comma-separated subnets:
     # College LAN + APIPA (169.254.x.x) + common static IP ranges
     # This allows direct PC-to-PC ethernet connections without a router
-    allowed_subnet: str = "10.10.12.0/23,169.254.0.0/16,192.168.0.0/16,172.16.0.0/12,10.0.0.0/8"
-    host_ip: str = "10.10.13.242"
+    allowed_subnet: str = "10.10.12.0/23,169.254.0.0/16,192.168.0.0/16,172.16.0.0/12,10.0.0.0/8,127.0.0.0/8"
+    host_ip: str = "0.0.0.0"
 
     # Database (SQLite for single-PC, PostgreSQL for production)
     database_url: str = "sqlite+aiosqlite:///data/mbmbook.db"
