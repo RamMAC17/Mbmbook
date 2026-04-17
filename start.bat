@@ -50,4 +50,4 @@ echo   ║  Press Ctrl+C to stop the server                        ║
 echo   ╚══════════════════════════════════════════════════════════╝
 echo.
 
-D:\MBMbook\.venv\Scripts\python.exe -m uvicorn backend.app:app --host 0.0.0.0 --port 80 --reload --reload-exclude data --reload-exclude frontend --reload-exclude .git
+D:\MBMbook\.venv\Scripts\python.exe -m uvicorn backend.app:app --host 0.0.0.0 --port 80 --reload --reload-dir backend
