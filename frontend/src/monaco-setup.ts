@@ -21,5 +21,47 @@ self.MonacoEnvironment = {
   },
 }
 
+monaco.editor.defineTheme('mbm-dark', {
+  base: 'vs-dark',
+  inherit: true,
+  rules: [],
+  colors: {
+    'editorCursor.foreground': '#FBBF24',
+    'editor.lineHighlightBackground': '#2A3148',
+    'editorLineNumber.foreground': '#5B6B86',
+    'editorLineNumber.activeForeground': '#E3E7EA',
+    'editor.selectionBackground': '#42506F99',
+    'editor.inactiveSelectionBackground': '#33415555',
+  },
+})
+
+monaco.editor.defineTheme('mbm-mix', {
+  base: 'vs-dark',
+  inherit: true,
+  rules: [],
+  colors: {
+    'editorCursor.foreground': '#F59E0B',
+    'editor.lineHighlightBackground': '#313B57',
+    'editorLineNumber.foreground': '#6A738B',
+    'editorLineNumber.activeForeground': '#EEF2FF',
+    'editor.selectionBackground': '#5B6C9899',
+    'editor.inactiveSelectionBackground': '#3D4A6A55',
+  },
+})
+
+monaco.editor.defineTheme('mbm-light', {
+  base: 'vs',
+  inherit: true,
+  rules: [],
+  colors: {
+    'editorCursor.foreground': '#B45309',
+    'editor.lineHighlightBackground': '#EEF2FF',
+    'editorLineNumber.foreground': '#9AA4B2',
+    'editorLineNumber.activeForeground': '#1F2937',
+    'editor.selectionBackground': '#C7D2FE80',
+    'editor.inactiveSelectionBackground': '#D6DEF080',
+  },
+})
+
 // Tell @monaco-editor/react to use the local Monaco instance (skip CDN)
 loader.config({ monaco })

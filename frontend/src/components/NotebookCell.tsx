@@ -49,7 +49,9 @@ function getMonacoLanguage(lang: string): string {
 }
 
 function getMonacoTheme(theme: string): string {
-  return theme === 'light' ? 'vs' : 'vs-dark'
+  if (theme === 'light') return 'mbm-light'
+  if (theme === 'mix') return 'mbm-mix'
+  return 'mbm-dark'
 }
 
 interface Props { cell: Cell; index: number }
@@ -174,12 +176,14 @@ export function NotebookCell({ cell, index }: Props) {
             lineNumbersMinChars: 3,
             glyphMargin: false,
             folding: false,
-            renderLineHighlight: 'gutter',
+            renderLineHighlight: 'all',
             renderWhitespace: 'none',
             renderControlCharacters: false,
             renderFinalNewline: 'off',
             cursorStyle: 'line',
-            cursorBlinking: 'blink',
+            cursorWidth: 3,
+            cursorBlinking: 'phase',
+            cursorSmoothCaretAnimation: 'on',
             scrollbar: { vertical: 'hidden', horizontal: 'auto' },
             padding: { top: 8, bottom: 8 },
             automaticLayout: true,
