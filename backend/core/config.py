@@ -40,11 +40,18 @@ class Settings(BaseSettings):
     host_data_dir: str = ""
     kernel_timeout: int = 3600  # seconds
     max_kernels_per_node: int = 40
+    share_admin_password: str = "change-me-share-password"
+    shared_folder_path: str = ""
+    host_share_root: str = "d:/"
+    host_share_mount: str = "/hostfs"
 
     # Storage
     data_dir: Path = Path("data")
     notebooks_dir: Path = Path("data/notebooks")
     uploads_dir: Path = Path("data/uploads")
+    storage_cleanup_interval_seconds: int = 900
+    storage_stale_hours: int = 24
+    python_state_history_limit: int = 200
 
     # Resource Limits (per kernel)
     default_cpu_limit: float = 0.5  # cores

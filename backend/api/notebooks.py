@@ -3,14 +3,23 @@
 import uuid
 import re
 import shutil
+import ipaddress
 from datetime import datetime, timezone
 from pathlib import Path
-from fastapi import APIRouter, HTTPException, UploadFile, File, Request, status
+from fastapi import APIRouter, HTTPException, UploadFile, File, Request, Query, status
+from fastapi.responses import FileResponse
+from pydantic import BaseModel
 from backend.core.config import settings
+from backend.services.kernel_manager import kernel_manager
 from backend.services.notebook_sessions import (
     bind_or_validate_owner,
     get_owner,
     release_owner,
+)
+from backend.services.shared_folder import (
+    get_shared_folder_path,
+    get_shared_folder_state,
+    set_shared_folder_path,
 )
 from backend.schemas import (
     NotebookCreate, NotebookUpdate, NotebookResponse,
@@ -22,6 +31,42 @@ router = APIRouter()
 # In-memory stores for dev. Replaced by DB in production.
 _notebooks: dict[str, dict] = {}
 _cells: dict[str, dict] = {}
+
+
+class SharedFolderUpdateRequest(BaseModel):
+    path: str
+    password: str
+
+
+def _resolve_shared_path(relative_path: str) -> Path:
+    shared_root = get_shared_folder_path()
+    cleaned = (relative_path or "").replace("\\", "/").lstrip("/")
+    target = (shared_root / cleaned).resolve()
+    if not target.is_relative_to(shared_root):
+        raise HTTPException(status_code=400, detail="Invalid path")
+    return target
+
+
+def _is_local_admin_request(request: Request, password: str) -> bool:
+    if password != settings.share_admin_password:
+        return False
+
+    client_ip = request.client.host if request.client else ""
+    try:
+        client_addr = ipaddress.ip_address(client_ip)
+    except ValueError:
+        return False
+
+    if client_addr.is_loopback:
+        return True
+    if settings.host_ip and settings.host_ip != "0.0.0.0" and client_ip == settings.host_ip:
+        return True
+
+    # Docker Desktop local NAT traffic often appears as 172.16.0.0/12.
+    if client_addr in ipaddress.ip_network("172.16.0.0/12"):
+        return True
+
+    return False
 
 
 def _get_session_id(request: Request) -> str:
@@ -202,3 +247,71 @@ async def upload_notebook_files(notebook_id: str, request: Request, files: list[
         "count": len(uploaded),
         "message": "Files uploaded successfully",
     }
+
+
+@router.get("/shared/files")
+async def list_shared_files(path: str = Query(default="")):
+    """List files and folders from the shared directory for all users."""
+    target = _resolve_shared_path(path)
+    if not target.exists():
+        raise HTTPException(status_code=404, detail="Path not found")
+    if not target.is_dir():
+        raise HTTPException(status_code=400, detail="Path is not a directory")
+
+    root = get_shared_folder_path()
+    entries: list[dict] = []
+    for item in sorted(target.iterdir(), key=lambda p: (not p.is_dir(), p.name.lower())):
+        stat_info = item.stat()
+        rel = str(item.relative_to(root)).replace("\\", "/")
+        entries.append(
+            {
+                "name": item.name,
+                "path": rel,
+                "type": "directory" if item.is_dir() else "file",
+                "size": stat_info.st_size if item.is_file() else None,
+                "updated_at": datetime.fromtimestamp(stat_info.st_mtime, timezone.utc).isoformat(),
+            }
+        )
+
+    return {
+        "base": str(root).replace("\\", "/"),
+        "path": str(target.relative_to(root)).replace("\\", "/") if target != root else "",
+        "entries": entries,
+    }
+
+
+@router.get("/shared/admin/status")
+async def shared_folder_admin_status(request: Request, password: str = Query(..., min_length=1)):
+    """Host-only endpoint to inspect shared-folder configuration state."""
+    if not _is_local_admin_request(request, password):
+        raise HTTPException(status_code=403, detail="Only host admin can manage shared folder")
+    return get_shared_folder_state()
+
+
+@router.post("/shared/admin/share-path")
+async def set_shared_folder_admin_path(request: Request, body: SharedFolderUpdateRequest):
+    """Host-only endpoint to set a shared host directory for all notebooks."""
+    if not _is_local_admin_request(request, body.password):
+        raise HTTPException(status_code=403, detail="Only host admin can manage shared folder")
+
+    try:
+        state = set_shared_folder_path(body.path, updated_by="host-admin")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    # Recreate kernels so the new /shared mount path is applied everywhere.
+    await kernel_manager.shutdown_all_kernels()
+
+    return {
+        "message": "Shared folder updated. Existing kernels were restarted.",
+        "shared": state,
+    }
+
+
+@router.get("/shared/download")
+async def download_shared_file(path: str = Query(..., min_length=1)):
+    """Download a file from the shared directory for all users."""
+    target = _resolve_shared_path(path)
+    if not target.exists() or not target.is_file():
+        raise HTTPException(status_code=404, detail="File not found")
+    return FileResponse(path=str(target), filename=target.name)

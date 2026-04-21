@@ -61,6 +61,11 @@ if errorlevel 1 (
 echo   [2/4] Setting up data directories...
 if not exist "data\notebooks" mkdir "data\notebooks"
 if not exist "data\uploads" mkdir "data\uploads"
+if not exist "data\shared" mkdir "data\shared"
+if not exist ".env" (
+    copy /Y ".env.example" ".env" >nul
+    echo         Created .env from .env.example
+)
 echo         Data directories ready.
 
 :: ─── 3. Build Python kernel image (full ML stack) ───
@@ -91,9 +96,7 @@ if errorlevel 1 (
 
 :: ─── Auto-detect LAN IP for display ───
 set "LAN_IP=localhost"
-for /f "tokens=2 delims=:" %%a in ('ipconfig ^| findstr /c:"IPv4" ^| findstr "10."') do (
-    for /f "tokens=*" %%b in ("%%a") do set "LAN_IP=%%b"
-)
+for /f "usebackq delims=" %%i in (`powershell -NoProfile -Command "(Get-NetIPAddress -AddressFamily IPv4 ^| Where-Object { $_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.254.*' } ^| Select-Object -First 1 -ExpandProperty IPAddress)"`) do set "LAN_IP=%%i"
 
 echo.
 echo   ╔══════════════════════════════════════════════════════════╗
@@ -109,16 +112,18 @@ echo   ║  pandas, numpy, matplotlib, seaborn, plotly, nltk,      ║
 echo   ║  spacy, transformers, xgboost, and more!                ║
 echo   ╚══════════════════════════════════════════════════════════╝
 echo.
+echo   Admin shared-folder setup (run on HOST PC PowerShell):
+echo   1^) Set password in .env: MBM_SHARE_ADMIN_PASSWORD=your-strong-password
+echo   2^) Share a folder path:
+echo      Invoke-RestMethod -Uri http://localhost:9999/api/v1/notebooks/shared/admin/share-path -Method Post -ContentType "application/json" -Body "{""path"":""D:/Book/Mbmbook/data/shared"",""password"":""your-strong-password""}"
+echo   3^) Students list/download:
+echo      GET /api/v1/notebooks/shared/files
+echo      GET /api/v1/notebooks/shared/download?path=yourfile.ext
+echo.
 
 :: Open browser after short delay
 timeout /t 3 /nobreak >nul
 start http://localhost:9999
 
-echo   Press any key to STOP the server and shut down...
-pause >nul
-
-echo.
-echo   Shutting down MBM Book...
-%DC% down
-echo   Done. Goodbye!
-timeout /t 2 >nul
+echo   MBM Book is now hosted on port 9999 and will keep running in Docker.
+echo   To stop later, run: %DC% down
