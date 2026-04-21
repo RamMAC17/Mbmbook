@@ -102,7 +102,7 @@ function loadInitialNotebook(): Notebook {
   }
   // Create fresh notebook
   const fresh: Notebook = {
-    id: `nb-${Date.now()}`,
+    id: newNotebookId(),
     title: 'Untitled Notebook',
     cells: [createDefaultCell('code', 'python')],
     defaultLanguage: 'python',
@@ -196,6 +196,13 @@ interface NotebookState {
 let cellCounter = 0
 function newCellId(): string {
   return `cell-${Date.now()}-${++cellCounter}`
+}
+
+function newNotebookId(): string {
+  const randomPart = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID().slice(0, 12)
+    : Math.random().toString(36).slice(2, 14)
+  return `nb-${Date.now().toString(36)}-${randomPart}`
 }
 
 function createDefaultCell(type: 'code' | 'markdown' = 'code', language = 'python'): Cell {
@@ -410,7 +417,7 @@ export const useNotebookStore = create<NotebookState>((set, get) => {
       saveNotebookToStorage(state.notebook)
 
       const fresh: Notebook = {
-        id: `nb-${Date.now()}`,
+        id: newNotebookId(),
         title: 'Untitled Notebook',
         cells: [createDefaultCell('code', 'python')],
         defaultLanguage: 'python',
@@ -453,7 +460,7 @@ export const useNotebookStore = create<NotebookState>((set, get) => {
         }
         // No notebooks left - create fresh
         const fresh: Notebook = {
-          id: `nb-${Date.now()}`,
+          id: newNotebookId(),
           title: 'Untitled Notebook',
           cells: [createDefaultCell('code', 'python')],
           defaultLanguage: 'python',

@@ -3,12 +3,28 @@
  */
 
 const API_BASE = '/api/v1'
+const SESSION_KEY = 'mbm_session'
+
+export function getClientSessionId(): string {
+  let sessionId = localStorage.getItem(SESSION_KEY)
+  if (!sessionId) {
+    const randomPart = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+    sessionId = `sess-${randomPart}`
+    localStorage.setItem(SESSION_KEY, sessionId)
+  }
+  return sessionId
+}
 
 async function request(path: string, options: RequestInit = {}) {
   const token = localStorage.getItem('mbm_token')
+  const isFormData = options.body instanceof FormData
+  const sessionId = getClientSessionId()
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
+    ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    'X-MBM-Session': sessionId,
     ...(options.headers as Record<string, string> || {}),
   }
 
@@ -32,7 +48,10 @@ export const api = {
     const body = new URLSearchParams({ username, password })
     return fetch(`${API_BASE}/auth/login`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'X-MBM-Session': getClientSessionId(),
+      },
       body,
     }).then(r => r.json())
   },
@@ -54,6 +73,11 @@ export const api = {
     request(`/notebooks/${nbId}/cells/${cellId}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteCell: (nbId: string, cellId: string) =>
     request(`/notebooks/${nbId}/cells/${cellId}`, { method: 'DELETE' }),
+  uploadNotebookFiles: (nbId: string, files: FileList | File[]) => {
+    const form = new FormData()
+    Array.from(files).forEach((file) => form.append('files', file))
+    return request(`/notebooks/${nbId}/uploads`, { method: 'POST', body: form })
+  },
 
   // Kernels
   launchKernel: (language: string, notebookId?: string) =>

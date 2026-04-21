@@ -2,6 +2,8 @@
  * WebSocket service for real-time notebook communication.
  */
 
+import { getClientSessionId } from './api'
+
 type MessageHandler = (msg: any) => void
 
 class WebSocketService {
@@ -25,7 +27,8 @@ class WebSocketService {
 
     this.notebookId = notebookId
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const url = `${protocol}//${window.location.host}/ws/notebook/${notebookId}`
+    const sessionId = encodeURIComponent(getClientSessionId())
+    const url = `${protocol}//${window.location.host}/ws/notebook/${notebookId}?session=${sessionId}`
 
     this.ws = new WebSocket(url)
 
@@ -49,7 +52,12 @@ class WebSocketService {
       }
     }
 
-    this.ws.onclose = () => {
+    this.ws.onclose = (event) => {
+      if (event.code === 1008) {
+        console.warn('[WS] Session ownership mismatch for notebook:', notebookId)
+        this.emit('error', { type: 'error', message: 'Notebook session mismatch' })
+        return
+      }
       console.log('[WS] Disconnected. Reconnecting in 3s...')
       this.emit('disconnected', {})
       this.reconnectTimer = window.setTimeout(() => {

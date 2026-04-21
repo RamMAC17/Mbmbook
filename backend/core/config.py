@@ -37,16 +37,18 @@ class Settings(BaseSettings):
     # Docker
     docker_network: str = "mbmbook-net"
     kernel_image_prefix: str = "mbmbook-kernel"
+    host_data_dir: str = ""
     kernel_timeout: int = 3600  # seconds
-    max_kernels_per_node: int = 10
+    max_kernels_per_node: int = 40
 
     # Storage
+    data_dir: Path = Path("data")
     notebooks_dir: Path = Path("data/notebooks")
     uploads_dir: Path = Path("data/uploads")
 
     # Resource Limits (per kernel)
-    default_cpu_limit: float = 2.0  # cores
-    default_memory_limit: str = "4g"
+    default_cpu_limit: float = 0.5  # cores
+    default_memory_limit: str = "1g"
     default_gpu_limit: int = 0  # 0 = no GPU
 
     # WebSocket
@@ -81,5 +83,6 @@ class Settings(BaseSettings):
 settings = Settings()
 
 # Ensure directories exist
+settings.data_dir.mkdir(parents=True, exist_ok=True)
 settings.notebooks_dir.mkdir(parents=True, exist_ok=True)
 settings.uploads_dir.mkdir(parents=True, exist_ok=True)

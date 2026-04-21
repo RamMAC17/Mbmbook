@@ -10,10 +10,14 @@ services:
       MBM_HOST: "0.0.0.0"
       MBM_PORT: "9999"
       MBM_HOST_IP: "${MBM_HOST_IP:-0.0.0.0}"
+      MBM_HOST_DATA_DIR: "${MBM_HOST_DATA_DIR:-d:/Book/Mbmbook/data}"
       MBM_DATABASE_URL: "sqlite+aiosqlite:///data/mbmbook.db"
       MBM_DEBUG: "false"
       MBM_DOCKER_NETWORK: "mbmbook-net"
       MBM_KERNEL_IMAGE_PREFIX: "mbmbook-kernel"
+      MBM_MAX_KERNELS_PER_NODE: "${MBM_MAX_KERNELS_PER_NODE:-40}"
+      MBM_DEFAULT_CPU_LIMIT: "${MBM_DEFAULT_CPU_LIMIT:-0.5}"
+      MBM_DEFAULT_MEMORY_LIMIT: "${MBM_DEFAULT_MEMORY_LIMIT:-1g}"
     volumes:
       - ./data:/app/data
       - /var/run/docker.sock:/var/run/docker.sock

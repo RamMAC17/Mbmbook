@@ -93,7 +93,7 @@ class NotebookResponse(BaseModel):
 
 class KernelLaunchRequest(BaseModel):
     language: str
-    notebook_id: uuid.UUID | None = None
+    notebook_id: str | None = None
     resource_profile: str = "default"  # default, gpu, high-memory
 
 

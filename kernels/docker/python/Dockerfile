@@ -81,6 +81,12 @@ RUN pip install --no-cache-dir \
     joblib dill cloudpickle \
     regex faker
 
+# ── TensorFlow GPU Runtime (NVIDIA) ──
+# Installs CUDA user-space libraries needed by TensorFlow when kernel
+# containers are launched with "--gpus all".
+RUN pip install --no-cache-dir --upgrade "tensorflow[and-cuda]==2.21.0"
+ENV LD_LIBRARY_PATH=/usr/local/lib/python3.11/site-packages/nvidia/cublas/lib:/usr/local/lib/python3.11/site-packages/nvidia/cudnn/lib:/usr/local/lib/python3.11/site-packages/nvidia/cuda_runtime/lib:${LD_LIBRARY_PATH}
+
 # Download NLTK data
 RUN python -c "import nltk; nltk.download('punkt'); nltk.download('stopwords'); nltk.download('wordnet')" 2>/dev/null || true
 

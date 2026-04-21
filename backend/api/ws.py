@@ -2,9 +2,9 @@
 
 import json
 import uuid
-import asyncio
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from backend.services.kernel_manager import kernel_manager
+from backend.services.notebook_sessions import bind_or_validate_owner
 
 router = APIRouter()
 
@@ -29,6 +29,14 @@ async def notebook_ws(websocket: WebSocket, notebook_id: str):
       {"type": "status", "cell_id": "...", "execution_state": "busy|idle"}
       {"type": "kernel_status", "kernel_id": "...", "status": "..."}
     """
+    session_id = websocket.query_params.get("session")
+    if not session_id:
+        session_id = websocket.client.host if websocket.client else "anonymous"
+
+    if not bind_or_validate_owner(notebook_id, session_id):
+        await websocket.close(code=1008)
+        return
+
     await websocket.accept()
     print(f"  🔌 WebSocket connected: notebook={notebook_id} client={websocket.client}")
 
@@ -87,6 +95,7 @@ async def _handle_execute(ws: WebSocket, notebook_id: str, msg: dict):
             kernel_id=kernel_id,
             code=code,
             language=language,
+            notebook_id=notebook_id,
         ):
             output["cell_id"] = cell_id
             await ws.send_json(output)

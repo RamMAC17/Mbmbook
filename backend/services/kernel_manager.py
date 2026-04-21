@@ -8,6 +8,7 @@ fallback to subprocess when Docker is not available.
 import asyncio
 import os
 import sys
+import re
 import shutil
 import time
 import uuid
@@ -34,13 +35,32 @@ def _docker_available() -> bool:
         return False
 
 
+def _safe_scope_id(raw: str | None) -> str:
+    """Sanitize an identifier for filesystem/docker path usage."""
+    value = raw or "default"
+    cleaned = re.sub(r"[^A-Za-z0-9._-]", "_", value)
+    return cleaned[:96] if cleaned else "default"
+
+
+def _to_docker_mount_path(path: str) -> str:
+    """Normalize a host path for docker bind mount args."""
+    return path.replace("\\", "/").rstrip("/")
+
+
 class KernelInstance:
     """Represents a running kernel instance."""
 
-    def __init__(self, kernel_id: str, language: str, node_id: str | None = None):
+    def __init__(
+        self,
+        kernel_id: str,
+        language: str,
+        node_id: str | None = None,
+        notebook_id: str | None = None,
+    ):
         self.id = kernel_id
         self.language = language
         self.node_id = node_id
+        self.notebook_id = notebook_id
         self.container_id: str | None = None
         self.status: str = "starting"
         self.started_at = datetime.now(timezone.utc)
@@ -55,6 +75,7 @@ class KernelInstance:
             "language": self.language,
             "status": self.status,
             "node_id": self.node_id,
+            "notebook_id": self.notebook_id,
             "container_id": self.container_id,
             "resource_usage": self.resource_usage,
             "started_at": self.started_at.isoformat(),
@@ -104,7 +125,11 @@ class KernelManager:
             raise ValueError(f"Unsupported language: {language}. Available: {list(KERNEL_REGISTRY.keys())}")
 
         kernel_id = str(uuid.uuid4())
-        kernel = KernelInstance(kernel_id=kernel_id, language=lang_lower)
+        kernel = KernelInstance(
+            kernel_id=kernel_id,
+            language=lang_lower,
+            notebook_id=notebook_id,
+        )
         kernel.status = "idle"
 
         self._kernels[kernel_id] = kernel
@@ -119,7 +144,11 @@ class KernelManager:
         return kernel.to_dict() if kernel else None
 
     async def execute_code(
-        self, kernel_id: str | None, code: str, language: str = "python"
+        self,
+        kernel_id: str | None,
+        code: str,
+        language: str = "python",
+        notebook_id: str | None = None,
     ) -> AsyncGenerator[dict, None]:
         lang_lower = language.lower()
         kernel_spec = KERNEL_REGISTRY.get(lang_lower)
@@ -128,8 +157,20 @@ class KernelManager:
             return
 
         kernel = self._kernels.get(kernel_id) if kernel_id else None
+        if kernel and notebook_id:
+            if kernel.notebook_id and kernel.notebook_id != notebook_id:
+                yield {
+                    "type": "error",
+                    "ename": "NotebookIsolationError",
+                    "evalue": "Kernel belongs to a different notebook",
+                    "traceback": [],
+                }
+                return
+            if not kernel.notebook_id:
+                kernel.notebook_id = notebook_id
+
         if not kernel:
-            result = await self.launch_kernel(language)
+            result = await self.launch_kernel(language, notebook_id=notebook_id)
             kernel = self._kernels[result["id"]]
 
         kernel.status = "busy"
@@ -167,10 +208,17 @@ class KernelManager:
 
         file_ext = spec.get("file_extension", ".txt")
         docker_image = spec["docker_image"]
-        data_dir = os.path.abspath("data")
+        scope_id = _safe_scope_id(kernel.notebook_id or kernel.id)
+        notebook_data_dir = os.path.abspath(os.path.join("data", "notebooks", scope_id))
+        upload_data_dir = os.path.abspath(os.path.join("data", "uploads", scope_id))
+        os.makedirs(notebook_data_dir, exist_ok=True)
+        os.makedirs(upload_data_dir, exist_ok=True)
+        host_data_dir = (settings.host_data_dir or os.getenv("MBM_HOST_DATA_DIR", "")).strip()
+        container_id = os.getenv("HOSTNAME", "")
+        in_container = os.path.exists("/.dockerenv")
 
         with tempfile.NamedTemporaryFile(
-            mode="w", suffix=file_ext, delete=False, dir=data_dir
+            mode="w", suffix=file_ext, delete=False, dir=notebook_data_dir
         ) as f:
             f.write(code)
             temp_path = f.name
@@ -180,7 +228,7 @@ class KernelManager:
             # Base docker run args: isolated, resource-limited
             base_args = [
                 "docker", "run", "--rm",
-                "--network", "none",
+                "--network", settings.docker_network,
                 "--memory", str(settings.default_memory_limit),
                 "--cpus", str(settings.default_cpu_limit),
                 "--pids-limit", "256",
@@ -190,11 +238,35 @@ class KernelManager:
             if self._has_nvidia_docker():
                 base_args += ["--gpus", "all"]
 
-            base_args += [
-                "-v", f"{data_dir}:/workspace:rw",
-                "-w", "/workspace",
-                docker_image,
-            ]
+            # Preferred: bind host data directories directly, allowing strict
+            # notebook-level isolation in child kernel containers.
+            if host_data_dir:
+                host_base = _to_docker_mount_path(host_data_dir)
+                host_notebook_dir = f"{host_base}/notebooks/{scope_id}"
+                host_upload_dir = f"{host_base}/uploads/{scope_id}"
+                workspace_dir = "/workspace"
+                base_args += [
+                    "-v", f"{host_notebook_dir}:{workspace_dir}:rw",
+                    "-v", f"{host_upload_dir}:/uploads:rw",
+                    "-w", workspace_dir,
+                    docker_image,
+                ]
+            # Fallback for containerized deployments without explicit host path.
+            elif in_container and container_id:
+                workspace_dir = f"/app/data/notebooks/{scope_id}"
+                base_args += [
+                    "--volumes-from", container_id,
+                    "-w", workspace_dir,
+                    docker_image,
+                ]
+            else:
+                workspace_dir = "/workspace"
+                base_args += [
+                    "-v", f"{notebook_data_dir}:{workspace_dir}:rw",
+                    "-v", f"{upload_data_dir}:/uploads:rw",
+                    "-w", workspace_dir,
+                    docker_image,
+                ]
 
             compile_cmd = spec.get("compile_cmd")
             run_cmd = spec.get("run_cmd")
@@ -202,29 +274,29 @@ class KernelManager:
             # For compiled languages, run compile + execute in one shell command
             if compile_cmd:
                 compile_parts = " ".join(
-                    c.replace("{file}", f"/workspace/{temp_name}")
-                     .replace("{output}", f"/workspace/{temp_name}.out")
+                    c.replace("{file}", f"{workspace_dir}/{temp_name}")
+                     .replace("{output}", f"{workspace_dir}/{temp_name}.out")
                     for c in compile_cmd
                 )
                 if run_cmd:
                     run_parts = " ".join(
-                        c.replace("{file}", f"/workspace/{temp_name}")
-                         .replace("{output}", f"/workspace/{temp_name}.out")
+                        c.replace("{file}", f"{workspace_dir}/{temp_name}")
+                         .replace("{output}", f"{workspace_dir}/{temp_name}.out")
                         for c in run_cmd
                     )
                 else:
-                    run_parts = f"/workspace/{temp_name}.out"
+                    run_parts = f"{workspace_dir}/{temp_name}.out"
 
                 cmd = base_args + ["bash", "-c", f"{compile_parts} && {run_parts}"]
             elif run_cmd:
                 cmd_parts = [
-                    c.replace("{file}", f"/workspace/{temp_name}")
-                     .replace("{output}", f"/workspace/{temp_name}.out")
+                    c.replace("{file}", f"{workspace_dir}/{temp_name}")
+                     .replace("{output}", f"{workspace_dir}/{temp_name}.out")
                     for c in run_cmd
                 ]
                 cmd = base_args + cmd_parts
             else:
-                cmd = base_args + [spec.get("binary", "echo"), f"/workspace/{temp_name}"]
+                cmd = base_args + [spec.get("binary", "echo"), f"{workspace_dir}/{temp_name}"]
 
             try:
                 result = await asyncio.to_thread(
@@ -274,7 +346,8 @@ class KernelManager:
         compile_cmd = spec.get("compile_cmd")
         run_cmd_template = spec.get("run_cmd")
 
-        data_dir = os.path.abspath("data")
+        scope_id = _safe_scope_id(kernel.notebook_id or kernel.id)
+        data_dir = os.path.abspath(os.path.join("data", "notebooks", scope_id))
         os.makedirs(data_dir, exist_ok=True)
         with tempfile.NamedTemporaryFile(
             mode="w", suffix=file_ext, delete=False, dir=data_dir

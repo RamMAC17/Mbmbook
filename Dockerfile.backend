@@ -10,18 +10,27 @@ RUN npm install
 COPY frontend/ .
 RUN npm run build
 
+# ── Stage 1b: Docker CLI binary ──
+FROM docker:27-cli AS docker-cli
+
 # ── Stage 2: Backend + Serve Built Frontend ──
 FROM python:3.11-slim
 WORKDIR /app
 
 # System deps
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc g++ make curl docker.io && \
+    gcc g++ make curl && \
     rm -rf /var/lib/apt/lists/*
+
+# Copy Docker CLI so kernel manager can launch language containers via host daemon
+COPY --from=docker-cli /usr/local/bin/docker /usr/local/bin/docker
 
 # Install Python dependencies
 COPY pyproject.toml .
-RUN pip install --no-cache-dir -e ".[dev]" 2>/dev/null || pip install --no-cache-dir .
+RUN pip install --no-cache-dir \
+    fastapi "uvicorn[standard]" websockets sqlalchemy aiosqlite \
+    pydantic pydantic-settings "python-jose[cryptography]" "passlib[bcrypt]" \
+    python-multipart psutil GPUtil httpx aiofiles orjson email-validator
 
 # Copy application code
 COPY backend/ backend/

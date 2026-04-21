@@ -1,14 +1,43 @@
-import { Play, Square, Plus, RotateCcw, Save, Download, PanelLeftClose, PanelLeftOpen, Server } from 'lucide-react'
+import { useRef } from 'react'
+import { Plus, RotateCcw, Save, Download, PanelLeftClose, PanelLeftOpen, Server, Upload } from 'lucide-react'
 import { useNotebookStore } from '../stores/notebookStore'
 import { ThemeToggle } from './ThemeToggle'
 import { AnimatedTitle } from './AnimatedTitle'
+import { api } from '../services/api'
 
 export function Toolbar() {
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
   const {
     notebook, sidebarOpen, clusterPanelOpen, addCell, clearAllOutputs,
     setNotebookTitle, toggleSidebar, toggleClusterPanel,
     saveNotebook, downloadNotebook,
   } = useNotebookStore()
+
+  async function handleUploadFiles(fileList: FileList | null) {
+    if (!fileList || fileList.length === 0) return
+
+    try {
+      const result = await api.uploadNotebookFiles(notebook.id, fileList)
+      const uploaded = Array.isArray(result?.uploaded) ? result.uploaded : []
+
+      if (uploaded.length > 0) {
+        const message = [
+          `Uploaded ${uploaded.length} file(s).`,
+          '',
+          'Use these paths in Python code:',
+          ...uploaded.map((f: { path: string }) => f.path),
+        ].join('\n')
+        window.alert(message)
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'File upload failed'
+      window.alert(`Upload failed: ${message}`)
+    } finally {
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ''
+      }
+    }
+  }
 
   return (
     <header className="bg-surface-secondary border-b border-line px-2 sm:px-4 py-2 flex items-center gap-2 sm:gap-3 transition-theme flex-shrink-0">
@@ -71,6 +100,18 @@ export function Toolbar() {
           title="Download notebook (.ipynb)">
           <Download size={15} />
         </button>
+        <button onClick={() => fileInputRef.current?.click()}
+          className="p-1.5 rounded-md hover:bg-surface-tertiary text-content-muted hover:text-content-primary transition-colors hidden md:flex"
+          title="Upload files for notebook execution">
+          <Upload size={15} />
+        </button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          className="hidden"
+          multiple
+          onChange={(e) => void handleUploadFiles(e.target.files)}
+        />
 
         <div className="w-px h-5 bg-line mx-0.5 hidden sm:block" />
 
